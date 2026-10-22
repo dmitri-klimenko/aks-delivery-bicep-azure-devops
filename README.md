@@ -66,8 +66,9 @@ an ARM64 test alone does not verify an AMD64 image.
 requests targeting `main`. It installs .NET 10, restores dependencies, runs Release
 tests, publishes TRX test results (including failed runs), and builds a
 `linux/amd64` image only when the preceding steps succeed.
-The image is tagged with the Azure DevOps build ID. It is not pushed or retained
-after the hosted agent is discarded. No Azure credentials are required.
+The image is tagged with the Azure DevOps build ID. By default it is only built
+and is discarded with the agent. Optional ACR publishing uses federated Azure
+authentication and runs only on `main`; PR builds need no Azure connection.
 
 To activate it after reviewing and pushing the YAML:
 
@@ -87,10 +88,15 @@ References: [GitHub integration](https://learn.microsoft.com/en-us/azure/devops/
 [hosted agents](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/hosted),
 [test result publishing](https://learn.microsoft.com/en-us/azure/devops/pipelines/tasks/reference/publish-test-results-v2).
 
+## Store images in ACR
+
+Follow [the ACR setup guide](infra/README.md) to deploy the Bicep templates, connect
+the managed identity to Azure DevOps using federation, and enable image pushes.
+It includes verification and cleanup commands. The dedicated resources must not
+be shared with the later Terraform + GitHub Actions implementation.
+
 ## Next milestone
 
-Connect and verify the CI pipeline. After that, add Bicep for this project's
-ACR and federated Azure authentication before adding AKS deployment, probes,
-rolling updates, explicit rollback, monitoring, and cleanup.
-No Azure resources are created yet. The later Terraform + GitHub Actions
-implementation must manage separate Azure resources.
+Verify a federated image push in Azure DevOps, then add Bicep for AKS and image
+pull access. Later work adds deployment, probes, rolling updates, explicit
+rollback, and basic monitoring. AKS is not created in this milestone.

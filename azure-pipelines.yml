@@ -8,6 +8,12 @@ pr:
     include:
       - main
 
+parameters:
+  - name: pushImage
+    displayName: Push main-branch image to ACR (enable after Azure setup)
+    type: boolean
+    default: false
+
 pool:
   vmImage: ubuntu-24.04
 
@@ -20,6 +26,9 @@ steps:
     inputs:
       packageType: sdk
       version: 10.x
+
+  - script: az bicep build --file infra/main.bicep --outfile "$(Agent.TempDirectory)/aks-delivery-main.json"
+    displayName: Validate Bicep templates (no Azure login)
 
   - script: dotnet restore Delivery.slnx
     displayName: Restore dependencies
@@ -42,3 +51,23 @@ steps:
 
   - script: docker build --platform linux/amd64 --tag aks-delivery:$(Build.BuildId) .
     displayName: Build AMD64 container image
+
+  # Exclude Azure tasks entirely from PR and non-main runs, including authorization.
+  - ${{ if and(eq(parameters.pushImage, true), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest')) }}:
+    - task: AzureCLI@2
+      displayName: Push image to ACR with federated authentication
+      inputs:
+        azureSubscription: sc-aks-delivery-acr
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          az acr login --name "$ACR_NAME"
+          login_server=$(az acr show --name "$ACR_NAME" --query loginServer --output tsv)
+          image="$login_server/aks-delivery:$IMAGE_TAG"
+          docker tag "aks-delivery:$IMAGE_TAG" "$image"
+          docker push "$image"
+          echo "Pushed $image"
+      env:
+        ACR_NAME: $(acrName)
+        IMAGE_TAG: $(Build.BuildId)
