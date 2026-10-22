@@ -63,11 +63,11 @@ steps:
         inlineScript: |
           set -euo pipefail
           az acr login --name "$ACR_NAME"
-          login_server=$(az acr show --name "$ACR_NAME" --query loginServer --output tsv)
-          image="$login_server/aks-delivery:$IMAGE_TAG"
+          image="$ACR_LOGIN_SERVER/aks-delivery:$IMAGE_TAG"
           docker tag "aks-delivery:$IMAGE_TAG" "$image"
           docker push "$image"
           echo "Pushed $image"
       env:
         ACR_NAME: $(acrName)
+        ACR_LOGIN_SERVER: $(acrLoginServer)
         IMAGE_TAG: $(Build.BuildId)

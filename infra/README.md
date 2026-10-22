@@ -90,8 +90,15 @@ federation can take a few minutes to propagate.
 
 ## 4. Enable image publishing
 
-In the pipeline's **Edit > Variables**, add a non-secret variable `acrName` using
-`registryName` from the deployment outputs. Do not enter the login server here.
+In the pipeline's **Edit > Variables**, add two non-secret variables:
+
+| Variable | Deployment output | Current TEST value |
+| --- | --- | --- |
+| `acrName` | `registryName` | `acrx6riohznx6ove` |
+| `acrLoginServer` | `loginServer` | `acrx6riohznx6ove.azurecr.io` |
+
+Use the deployment output for the login server rather than querying it inside
+the pipeline: `AcrPush` does not grant management-plane registry read access.
 Commit and push the repository changes when ready.
 
 Select **Run pipeline** on `main` and check **Push main-branch image to ACR**.
@@ -136,7 +143,7 @@ az group delete --name rg-aks-delivery-bicep-dev
 ```
 
 The delete command asks for confirmation. Also remove `sc-aks-delivery-acr` and
-the `acrName` pipeline variable in Azure DevOps. Subscription deployment history
+the `acrName` and `acrLoginServer` pipeline variables in Azure DevOps. Subscription deployment history
 is separate from the group and can optionally be removed:
 
 ```sh
