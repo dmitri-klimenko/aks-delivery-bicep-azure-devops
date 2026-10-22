@@ -1,5 +1,5 @@
 # aks-delivery-bicep-azure-devops
-Milestone 1: a small ASP.NET Core API, integration tests, and a container using
+A small ASP.NET Core API, integration tests, a container, and Azure DevOps CI using
 [.NET 10 LTS](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core).
 Install a current .NET 10 SDK and Docker Desktop. Run commands from the repository root.
 
@@ -60,10 +60,37 @@ To test this image on the Mac, repeat the container commands with
 emulation and may be slower. The image architecture must match the AKS node pool;
 an ARM64 test alone does not verify an AMD64 image.
 
+## Azure DevOps CI
+
+[azure-pipelines.yml](azure-pipelines.yml) runs on pushes to `main` and GitHub pull
+requests targeting `main`. It installs .NET 10, restores dependencies, runs Release
+tests, publishes TRX test results (including failed runs), and builds a
+`linux/amd64` image only when the preceding steps succeed.
+The image is tagged with the Azure DevOps build ID. It is not pushed or retained
+after the hosted agent is discarded. No Azure credentials are required.
+
+To activate it after reviewing and pushing the YAML:
+
+1. In an Azure DevOps project, open **Pipelines > New pipeline > GitHub**.
+2. Authorize access to this GitHub repository and select it.
+3. Select **Existing Azure Pipelines YAML file**, choose your branch, and select
+   `/azure-pipelines.yml`.
+4. Review and run the pipeline. Confirm both tests appear in the **Tests** tab and
+   the **Build AMD64 container image** step passes.
+
+The project needs available Microsoft-hosted parallel-job capacity for the
+`ubuntu-24.04` agent. Adding this file alone does not create or activate a pipeline.
+Local tests/builds do not verify Azure DevOps triggers or task execution; the first
+hosted run must verify those.
+
+References: [GitHub integration](https://learn.microsoft.com/en-us/azure/devops/pipelines/repos/github),
+[hosted agents](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/hosted),
+[test result publishing](https://learn.microsoft.com/en-us/azure/devops/pipelines/tasks/reference/publish-test-results-v2).
+
 ## Next milestone
 
-Add a small Azure DevOps CI pipeline that checks out GitHub source, runs tests,
-and builds the image. Later milestones add Bicep, federated Azure authentication,
-ACR/AKS, probes, rolling updates, explicit rollback, monitoring, and cleanup.
-No Azure resources or pipelines are created yet. The later Terraform + GitHub
-Actions implementation must manage separate Azure resources.
+Connect and verify the CI pipeline. After that, add Bicep for this project's
+ACR and federated Azure authentication before adding AKS deployment, probes,
+rolling updates, explicit rollback, monitoring, and cleanup.
+No Azure resources are created yet. The later Terraform + GitHub Actions
+implementation must manage separate Azure resources.
