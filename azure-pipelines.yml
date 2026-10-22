@@ -8,12 +8,6 @@ pr:
     include:
       - main
 
-parameters:
-  - name: pushImage
-    displayName: Push main-branch image to ACR (enable after Azure setup)
-    type: boolean
-    default: false
-
 pool:
   vmImage: ubuntu-24.04
 
@@ -53,7 +47,7 @@ steps:
     displayName: Build AMD64 container image
 
   # Exclude Azure tasks entirely from PR and non-main runs, including authorization.
-  - ${{ if and(eq(parameters.pushImage, true), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest')) }}:
+  - ${{ if and(eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest')) }}:
     - task: AzureCLI@2
       displayName: Push image to ACR with federated authentication
       inputs:

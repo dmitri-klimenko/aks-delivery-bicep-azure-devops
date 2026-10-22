@@ -101,11 +101,10 @@ Use the deployment output for the login server rather than querying it inside
 the pipeline: `AcrPush` does not grant management-plane registry read access.
 Commit and push the repository changes when ready.
 
-Select **Run pipeline** on `main` and check **Push main-branch image to ACR**.
-The parameter defaults to false so existing CI can run during bootstrap. After
-the first successful push, change `pushImage`'s default to `true` in
-`azure-pipelines.yml` and commit it to enable automatic publishing for main.
-PR and non-main builds omit the Azure task even when the parameter is true.
+Image publishing runs automatically after successful tests and image building on
+`main`. You can also select **Run pipeline** on `main` to publish manually. There
+is no checkbox parameter. PR and non-main builds omit the Azure task. Configure
+the service connection and both variables before running on `main`.
 
 The AzureCLI task exchanges the service connection's federated identity for Azure
 access, logs Docker into ACR, and pushes `aks-delivery:<Build.BuildId>`.
@@ -133,7 +132,7 @@ RBAC registry permissions: `AcrPush` does not apply to ABAC repository mode.
 
 ## Cleanup
 
-When finished, disable image publishing (`pushImage: false` by default), then
+When finished, disable the pipeline in Azure DevOps before deleting resources, then
 inspect and delete only this project's resource group. This deletes stored images
 and the managed identity, including its federated credential:
 

@@ -66,9 +66,9 @@ an ARM64 test alone does not verify an AMD64 image.
 requests targeting `main`. It installs .NET 10, restores dependencies, runs Release
 tests, publishes TRX test results (including failed runs), and builds a
 `linux/amd64` image only when the preceding steps succeed.
-The image is tagged with the Azure DevOps build ID. By default it is only built
-and is discarded with the agent. Optional ACR publishing uses federated Azure
-authentication and runs only on `main`; PR builds need no Azure connection.
+The image is tagged with the Azure DevOps build ID and automatically pushed to
+ACR after successful builds on `main`, using federated Azure authentication.
+PR and non-main builds only test and build; they need no Azure connection.
 
 To activate it after reviewing and pushing the YAML:
 
@@ -91,7 +91,7 @@ References: [GitHub integration](https://learn.microsoft.com/en-us/azure/devops/
 ## Store images in ACR
 
 Follow [the ACR setup guide](infra/README.md) to deploy the Bicep templates, connect
-the managed identity to Azure DevOps using federation, and enable image pushes.
+the managed identity to Azure DevOps using federation, and configure image publishing.
 It includes verification and cleanup commands. The dedicated resources must not
 be shared with the later Terraform + GitHub Actions implementation.
 
