@@ -68,6 +68,8 @@ tests, publishes TRX test results (including failed runs), and builds a
 `linux/amd64` image only when the preceding steps succeed.
 The image is tagged with the Azure DevOps build ID and automatically pushed to
 ACR after successful builds on `main`, using federated Azure authentication.
+Before publishing, the pipeline also deploys the Bicep infrastructure through a
+dedicated federated service connection; no personal sign-in or approval is needed.
 PR and non-main builds only test and build; they need no Azure connection.
 
 To activate it after reviewing and pushing the YAML:
@@ -90,13 +92,14 @@ References: [GitHub integration](https://learn.microsoft.com/en-us/azure/devops/
 
 ## Store images in ACR
 
-Follow [the ACR setup guide](infra/README.md) to deploy the Bicep templates, connect
-the managed identity to Azure DevOps using federation, and configure image publishing.
+The [infrastructure guide](infra/README.md) explains pipeline-managed Bicep
+deployment, federated identities, and image publishing.
 It includes verification and cleanup commands. The dedicated resources must not
 be shared with the later Terraform + GitHub Actions implementation.
 
 ## Next milestone
 
-Verify a federated image push in Azure DevOps, then add Bicep for AKS and image
-pull access. Later work adds deployment, probes, rolling updates, explicit
-rollback, and basic monitoring. AKS is not created in this milestone.
+AKS is enabled in the TEST
+parameter file; its nodes and related resources are billable.
+Next: application deployment, probes, rolling updates, explicit rollback, and
+basic monitoring.

@@ -1,154 +1,102 @@
-# ACR and federated Azure DevOps authentication
+# Pipeline-managed Azure infrastructure
 
-This milestone creates only a dedicated resource group, Basic Azure Container
-Registry, a user-assigned managed identity, and its registry-scoped `AcrPush` role.
-The optional federated credential trusts one Azure DevOps service connection.
-No client secrets, registry admin credentials, AKS, or deployment pipeline are used.
-The public registry endpoint supports hosted agents; anonymous pulls are disabled.
-Basic ACR is billable while it exists.
+Routine deployments run in Azure DevOps using workload identity federation.
+There is no personal user ID, interactive `az login`, or manual approval in the
+pipeline. Push changes to `main`; successful validation/tests and image building
+are followed by Bicep infrastructure deployment and image publishing.
+Pull requests and other branches do not run Azure deployment tasks.
 
-Use a current Azure CLI with Bicep. Run from the repository root. Your signed-in
-bootstrap user needs permission to create the resource group and resources, and
-to assign roles (for example Owner, or Contributor plus Role Based Access Control
-Administrator). The pipeline identity receives only `AcrPush` on this registry;
-it cannot deploy infrastructure. Infrastructure is applied locally for now.
+## Identities and permissions
 
-## 1. Bootstrap Azure resources
-
-The current TEST environment has already been bootstrapped in North Europe.
-Its service connection is `sc-aks-delivery-acr`, and its registry is
-`acrx6riohznx6ove`. `dev.bicepparam` records the public federation identifiers
-for this deployment. To update this existing environment, use:
-
-```sh
-az deployment sub what-if --name aks-delivery-acr --location northeurope --parameters infra/dev.bicepparam
-az deployment sub create --name aks-delivery-acr --location northeurope --parameters infra/dev.bicepparam
-```
-
-Select the TEST subscription first. These commands preserve the federation trust.
-The bootstrap steps below describe creating a new environment; use new federation
-values when connecting a different Azure DevOps project or managed identity.
-
-```sh
-az login
-export AZURE_SUBSCRIPTION_ID='<your TEST subscription ID>'
-az account set --subscription "$AZURE_SUBSCRIPTION_ID"
-az account show --query '{name:name,id:id}' --output table
-az bicep build --file infra/main.bicep --outfile /tmp/aks-delivery-main.json
-az deployment sub what-if --name aks-delivery-acr --location northeurope --template-file infra/main.bicep
-az deployment sub create --name aks-delivery-acr --location northeurope --template-file infra/main.bicep
-az deployment sub show --name aks-delivery-acr --query properties.outputs --output json
-```
-
-Defaults: `rg-aks-delivery-bicep-dev`, North Europe, and a deterministic ACR name
-derived from the resource group ID. Set `--parameters location=...` when deploying
-elsewhere. These resources belong exclusively to Bicep + Azure DevOps; use a
-different resource group, registry, and identity for the later Terraform project.
-North Europe passed the deployment preview in the selected TEST subscription;
-West Europe was rejected by Azure for this subscription.
-
-The initial deployment does not create a federated credential. For subsequent
-deployments after federation is configured, always supply both federation values
-as in step 3. Do not change the deployment name or group unintentionally.
-
-## 2. Create the Azure DevOps service connection
-
-In **Project settings > Service connections > New service connection**, select
-**Azure Resource Manager**, **App registration or Managed identity (manual)**,
-and **Workload identity federation**. Use:
-
-| Field | Value |
-| --- | --- |
-| Service connection name | `sc-aks-delivery-acr` |
-| Environment | Azure Cloud |
-| Directory (tenant) ID | `tenantId` from deployment outputs |
-| Scope level | Subscription |
-| Subscription ID | `subscriptionId` from deployment outputs |
-| Subscription name | Your selected TEST subscription name |
-| Application (client) ID | `identityClientId` from deployment outputs |
-
-Keep the connection as a draft. Copy the generated **Issuer** and **Subject
-identifier** exactly; do not derive them from organization/project names.
-Leave **Grant access permission to all pipelines** unchecked.
-
-## 3. Add the federation trust through Bicep
-
-In the same terminal used for bootstrap:
-
-```sh
-export ADO_FEDERATED_ISSUER='<issuer from the draft service connection>'
-export ADO_FEDERATED_SUBJECT='<subject identifier from the draft service connection>'
-az deployment sub what-if --name aks-delivery-acr --location northeurope --template-file infra/main.bicep \
-  --parameters federatedIssuer="$ADO_FEDERATED_ISSUER" federatedSubject="$ADO_FEDERATED_SUBJECT"
-az deployment sub create --name aks-delivery-acr --location northeurope --template-file infra/main.bicep \
-  --parameters federatedIssuer="$ADO_FEDERATED_ISSUER" federatedSubject="$ADO_FEDERATED_SUBJECT"
-```
-
-Return to Azure DevOps and **Finish setup > Verify and save**. Authorize only this
-pipeline through the connection's pipeline permissions. Role assignments and
-federation can take a few minutes to propagate.
-
-## 4. Enable image publishing
-
-In the pipeline's **Edit > Variables**, add two non-secret variables:
-
-| Variable | Deployment output | Current TEST value |
+| Service connection | Identity | Permissions |
 | --- | --- | --- |
-| `acrName` | `registryName` | `acrx6riohznx6ove` |
-| `acrLoginServer` | `loginServer` | `acrx6riohznx6ove.azurecr.io` |
+| `sc-aks-delivery-infra` | `id-aks-delivery-infra` | Contributor and Role Based Access Control Administrator on this project's resource group; AKS RBAC Cluster Admin on this cluster |
+| `sc-aks-delivery-acr` | `id-aks-delivery-acr-push` | AcrPush on this registry |
+| No service connection | AKS kubelet identity | AcrPull on this registry |
 
-Use the deployment output for the login server rather than querying it inside
-the pipeline: `AcrPush` does not grant management-plane registry read access.
-Commit and push the repository changes when ready.
+The infrastructure identity can manage resources and assign roles within
+`rg-aks-delivery-bicep-dev`. It has no subscription-wide role. Treat changes to
+pipeline YAML and Bicep on `main` as privileged changes. Neither connection stores
+client secrets; each is authorized only for this project's pipeline.
+AKS local admin accounts remain disabled; Kubernetes access is assigned to the
+pipeline's service principal, not to a personal user.
 
-Image publishing runs automatically after successful tests and image building on
-`main`. You can also select **Run pipeline** on `main` to publish manually. There
-is no checkbox parameter. PR and non-main builds omit the Azure task. Configure
-the service connection and both variables before running on `main`.
+## Files
 
-The AzureCLI task exchanges the service connection's federated identity for Azure
-access, logs Docker into ACR, and pushes `aks-delivery:<Build.BuildId>`.
-Every run uses a different tag; there is no `latest` tag. The tag is not locked
-against overwrites. Record the image digest from the push output for deployment.
+- `bootstrap.bicep` creates the resource group and deployment identity once.
+- `deployment-identity.bicep` defines its scoped permissions and federation trust.
+- `main.bicep` deploys resources within the existing project resource group.
+- `dev.bicepparam` contains TEST settings and public identity/federation IDs.
+- `registry.bicep` creates Basic ACR, its publishing identity, and AcrPush.
+- `aks.bicep` creates AKS, kubelet AcrPull, and pipeline Kubernetes access.
 
-## 5. Verify the hosted push
+The current environment uses ACR `acrx6riohznx6ove` in North Europe and AKS
+`aks-delivery-bicep-dev` in Sweden Central. North Europe rejected the selected
+node sizes; Sweden Central passed validation. AKS uses two AMD64
+`Standard_D4s_v6` nodes and Entra Azure RBAC. The Free control-plane tier does not
+make nodes, disks, networking, ACR, or cross-region transfer free.
+Two nodes use 8 vCPUs; the current 10-vCPU regional quota must increase to at least
+12 for the configured one-node upgrade surge.
 
-Check the pipeline's tests and push step. From your local terminal, with an
-account permitted to read registry repositories:
+## One-time trust bootstrap
 
-```sh
-export ACR_NAME=$(az deployment sub show --name aks-delivery-acr --query properties.outputs.registryName.value --output tsv)
-az acr repository show-tags --name "$ACR_NAME" --repository aks-delivery --output table
-```
+An already authorized Azure account must establish a pipeline's first identity
+and permissions; a pipeline cannot grant itself its initial access. This setup
+has been performed for TEST. It is not part of routine deployments.
 
-The list should contain the successful run's build ID. An operator with only
-management-plane Contributor permissions may need separate `AcrPull` access to
-list repository contents; the pipeline's identity already has `AcrPush`.
-Only a successful Azure DevOps run verifies the federated login and image push.
+For a new environment, an administrator applies `bootstrap.bicep`, creates an
+Azure Resource Manager service connection named `sc-aks-delivery-infra` using the
+managed identity's client ID and workload identity federation, then adds the exact
+issuer/subject returned by Azure DevOps to the identity through Bicep. Use the
+same process for the ACR publishing connection. No identity names or IDs should
+be copied to the later Terraform implementation; it must use separate resources.
 
-If publishing fails, check the service connection name/authorization, `acrName`,
-issuer/subject, and the identity's registry role. This registry explicitly uses
-RBAC registry permissions: `AcrPush` does not apply to ABAC repository mode.
+Only bootstrap requires subscription-level permission to create the group.
+The pipeline uses `az deployment group create --parameters infra/dev.bicepparam`
+against the dedicated group; it does not deploy at subscription scope.
+The infrastructure connection receives no approval/check requiring a person.
+
+## Pipeline configuration and verification
+
+The pipeline uses two non-secret variables:
+
+| Variable | TEST value |
+| --- | --- |
+| `acrName` | `acrx6riohznx6ove` |
+| `acrLoginServer` | `acrx6riohznx6ove.azurecr.io` |
+
+After committing and pushing the changes, verify **Deploy Azure infrastructure
+with federated authentication** and **Push image to ACR** pass on `main`.
+Every image is tagged with the build ID. ACR login uses the supplied server
+rather than a registry-details query that AcrPush cannot authorize.
+The application deployment to AKS is a separate next milestone; publishing an
+image does not yet update Kubernetes workloads.
+
+Bicep compilation validates syntax, not live permissions. Only a successful hosted
+run proves the infrastructure connection can deploy without personal credentials.
+Role assignments can take several minutes to propagate. Removing a role resource
+from an incremental Bicep deployment does not remove an existing Azure assignment.
+A prior personal admin assignment, if present, is not a pipeline dependency.
 
 ## Cleanup
 
-When finished, disable the pipeline in Azure DevOps before deleting resources, then
-inspect and delete only this project's resource group. This deletes stored images
-and the managed identity, including its federated credential:
+Disable the pipeline before teardown, then delete only this project's resource
+group. This removes ACR images, identities, and AKS with its managed node group:
 
 ```sh
 az resource list --resource-group rg-aks-delivery-bicep-dev --output table
 az group delete --name rg-aks-delivery-bicep-dev
 ```
 
-The delete command asks for confirmation. Also remove `sc-aks-delivery-acr` and
-the `acrName` and `acrLoginServer` pipeline variables in Azure DevOps. Subscription deployment history
-is separate from the group and can optionally be removed:
+The delete command asks for confirmation. Remove both service connections and
+pipeline variables afterward. To pause AKS compute instead of deleting it:
 
 ```sh
-az deployment sub delete --name aks-delivery-acr
+az aks stop --resource-group rg-aks-delivery-bicep-dev --name aks-delivery-bicep-dev
 ```
 
-References: [manual federated service connections](https://learn.microsoft.com/en-us/azure/devops/pipelines/release/configure-workload-identity),
-[ACR registry schema](https://learn.microsoft.com/en-us/azure/templates/microsoft.containerregistry/2025-11-01/registries),
-[ACR permission modes](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-rbac-abac-repository-permissions).
+Disks, networking, and ACR can still incur charges while AKS is stopped. Stopping
+or deleting resources is separate from automatic routine deployment.
+
+References: [federated service connections](https://learn.microsoft.com/en-us/azure/devops/pipelines/release/automate-service-connections),
+[AKS Azure RBAC](https://learn.microsoft.com/en-us/azure/aks/manage-azure-rbac).

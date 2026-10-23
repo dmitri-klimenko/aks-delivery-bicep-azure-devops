@@ -1,9 +1,17 @@
-targetScope = 'subscription'
-
-@description('Dedicated to Bicep + Azure DevOps. Never reuse for the Terraform project.')
-param resourceGroupName string = 'rg-aks-delivery-bicep-dev'
+targetScope = 'resourceGroup'
 
 param location string = 'northeurope'
+
+@description('Enable for the AKS milestone. Disabling does not delete an existing cluster.')
+param enableAks bool = false
+
+@description('Object ID of the federated infrastructure pipeline identity; never a personal user ID.')
+param pipelinePrincipalId string = ''
+
+param aksNodeVmSize string = 'Standard_D4s_v6'
+
+@description('AKS may use another region when the registry region has compute restrictions.')
+param aksLocation string = location
 
 @description('Copy exactly from the draft Azure DevOps workload identity service connection. Leave empty for initial bootstrap.')
 param federatedIssuer string = ''
@@ -11,19 +19,8 @@ param federatedIssuer string = ''
 @description('Copy exactly from Azure DevOps; do not construct this value yourself.')
 param federatedSubject string = ''
 
-resource projectGroup 'Microsoft.Resources/resourceGroups@2025-04-01' = {
-  name: resourceGroupName
-  location: location
-  tags: {
-    project: 'aks-delivery-bicep-azure-devops'
-    environment: 'dev'
-    managedBy: 'bicep'
-  }
-}
-
 module registry './registry.bicep' = {
   name: 'registry'
-  scope: projectGroup
   params: {
     location: location
     federatedIssuer: federatedIssuer
@@ -31,7 +28,19 @@ module registry './registry.bicep' = {
   }
 }
 
-output resourceGroupName string = projectGroup.name
+module aks './aks.bicep' = if (enableAks) {
+  name: 'aks'
+  params: {
+    location: aksLocation
+    registryName: registry.outputs.registryName
+    pipelinePrincipalId: pipelinePrincipalId
+    nodeVmSize: aksNodeVmSize
+  }
+}
+
+output aksClusterName string = enableAks ? aks!.outputs.clusterName : ''
+output aksNodeResourceGroup string = enableAks ? aks!.outputs.nodeResourceGroup : ''
+output resourceGroupName string = resourceGroup().name
 output registryName string = registry.outputs.registryName
 output registryId string = registry.outputs.registryId
 output loginServer string = registry.outputs.loginServer

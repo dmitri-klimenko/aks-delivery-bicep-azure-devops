@@ -21,7 +21,11 @@ steps:
       packageType: sdk
       version: 10.x
 
-  - script: az bicep build --file infra/main.bicep --outfile "$(Agent.TempDirectory)/aks-delivery-main.json"
+  - script: |
+      set -eu
+      az bicep build --file infra/main.bicep --outfile "$(Agent.TempDirectory)/aks-delivery-main.json"
+      az bicep build-params --file infra/dev.bicepparam --outfile "$(Agent.TempDirectory)/aks-delivery-dev.parameters.json"
+      az bicep build --file infra/bootstrap.bicep --outfile "$(Agent.TempDirectory)/aks-delivery-bootstrap.json"
     displayName: Validate Bicep templates (no Azure login)
 
   - script: dotnet restore Delivery.slnx
@@ -48,6 +52,22 @@ steps:
 
   # Exclude Azure tasks entirely from PR and non-main runs, including authorization.
   - ${{ if and(eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest')) }}:
+    - task: AzureCLI@2
+      displayName: Deploy Azure infrastructure with federated authentication
+      inputs:
+        azureSubscription: sc-aks-delivery-infra
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+          az deployment group create \
+            --resource-group rg-aks-delivery-bicep-dev \
+            --name "infra-$BUILD_ID" \
+            --parameters infra/dev.bicepparam \
+            --query properties.provisioningState --output tsv
+      env:
+        BUILD_ID: $(Build.BuildId)
+
     - task: AzureCLI@2
       displayName: Push image to ACR with federated authentication
       inputs:
